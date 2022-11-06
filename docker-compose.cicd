@@ -1,0 +1,73 @@
+pipeline {
+    agent none
+    stages {
+        stage ('Build on slave node') {
+            agent {
+                label 'jenkins-slave-1'
+            }
+            steps {
+                dir ('DevOps') {
+                    sh '''
+                    docker-compose down
+                    docker-compose up -d
+                    sleep 30
+                    docker logs devops-web-1
+                    docker logs devops-nginx-1
+                    '''
+                }
+            }
+        }
+        stage ('Testing on slave node') {
+            agent {
+                label 'jenkins-slave-1'
+            }
+            steps {
+                sh 'curl http://localhost:80'
+            }
+        }
+        stage ('Down and prune containers') {
+            agent {
+                label 'jenkins-slave-1'
+            }
+            steps {
+                dir ('DevOps') {
+                    sh '''
+                    docker compose down
+                    docker system prune -a --volumes -f
+                    '''
+                }
+            }
+        }
+        stage ('Deploy to PROD server step 1') {
+            agent {
+                label 'master'
+            }
+            steps {
+                dir ('/var/opt/site/space-chat') {
+                    sh '''
+                    git checkout main
+                    git merge testing
+                    git pull
+                    '''
+                }
+            }
+        }
+        stage ('Deploy to PROD server step 2') {
+            agent {
+                label 'master'
+            }
+            steps {
+                dir ('/var/opt/site/space-chat/DevOps') {
+                    sh '''
+                    /bin/sh -c "/etc/nginx/sites-available/BANNER.sh" // Set maintance
+                    sleep 5
+                    docker stop devops-web-1
+                    sleep 10
+                    docker start devops-web-1
+                    /bin/sh -c "/etc/nginx/sites-available/unBANNER.sh" // unSet maintance
+                    '''
+                }
+            }
+        }
+    }
+}
