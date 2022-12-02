@@ -1,0 +1,27 @@
+pipeline {
+    agent any 
+
+    environment {
+        ops_scripts = '/app/ops-scripts'
+        dump_path = '/app/data/postgres'
+    }
+
+    stages {
+        stage ('prod_backup') {
+            steps {
+                sh 'sudo ${ops_scripts}/psql_dump.sh'
+            }
+        }
+        stage ('send_to_test') {
+            steps {
+                sh 'sudo scp -P 1998 ${dump_path}/psql_dump_$(date "+%Y-%m-%d").sql.gz root@noted-app-test:\${dump_path}'
+            }
+        }
+        stage ('restore') {
+        agent { label 'noted-app-test' }
+            steps {
+                sh 'sudo ${ops_scripts}/psql_restore.sh'
+            }
+        }
+    }
+}
