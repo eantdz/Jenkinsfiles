@@ -9,7 +9,7 @@ pipeline {
     stages {
         stage ('prod_backup') {
             steps {
-                sh 'sudo ${ops_scripts}/psql_dump.sh'
+                sh 'sudo ${ops_scripts}/PostgreSQL_backup.sh'
             }
         }
         stage ('send_to_test') {
@@ -20,7 +20,7 @@ pipeline {
         stage ('restore') {
         agent { label 'noted-app-test' }
             steps {
-                sh 'sudo ${ops_scripts}/psql_restore.sh'
+                sh 'sudo ${ops_scripts}/PostgreSQL_restore.sh'
             }
         }
     }

@@ -8,7 +8,7 @@ pipeline {
         stage ('postgres_avatars_dump') {
             steps {
                 sh ''' 
-                    sudo ${ops_scripts}/psql_dump.sh
+                    sudo ${ops_scripts}/PostgreSQL_backup.sh
                     sudo ${ops_scripts}/avatars_dump.sh 
                 '''
             }
@@ -16,8 +16,8 @@ pipeline {
         stage ('docker_data_prune') {
             steps {
                 sh ''' 
-                    docker stop $(docker ps -a -q)
-                    docker system prune -a --volumes -f
+                    docker stop $(docker ps -a -q); exit 0;
+                    docker system prune -a --volumes -f; exit 0;
                 '''
             }
         }
@@ -51,7 +51,7 @@ pipeline {
             steps {
                 sh '''
                     sleep 5
-                    sudo ${ops_scripts}/psql_restore.sh
+                    sudo ${ops_scripts}/PostgreSQL_restore.sh
                     sudo ${ops_scripts}/avatars_restore.sh 
                  '''
             }
@@ -72,11 +72,13 @@ pipeline {
         failure {
             withCredentials([string(credentialsId: 'chatToken', variable: 'TOKEN'), string(credentialsId: 'chatID', variable: 'CHAT_ID')]) {
             sh ''' 
-                docker stop $(docker ps -a -q)
+                docker stop $(docker ps -a -q) 
                 service nginx start  
+                docker system prune -a --volumes -f 
                 curl -s -X POST https://api.telegram.org/bot${TOKEN}/sendMessage -d chat_id=${CHAT_ID} -d parse_mode=markdown -d text='noted-app-prod : *Результат сборки* : Ошибка'
             '''
             }
+            
         }
         success {
             withCredentials([string(credentialsId: 'chatToken', variable: 'TOKEN'), string(credentialsId: 'chatID', variable: 'CHAT_ID')]) {
