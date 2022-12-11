@@ -1,0 +1,103 @@
+pipeline {
+    agent any 
+    environment {
+        ops_scripts = '/app/ops-scripts'
+        compose_path = '/app/docker/noted'
+    }
+    stages {
+        stage ('postgres_avatars_dump') {
+            steps {
+                sh ''' 
+                    sudo ${ops_scripts}/PostgreSQL_backup.sh
+                '''
+                //    sudo ${ops_scripts}/avatars_dump.sh 
+                
+            }
+        }
+        stage ('docker_data_prune') {
+            steps {
+                sh ''' 
+                    docker stop $(docker ps -a -q); exit 0;
+                    docker system prune -a --volumes -f; exit 0;
+                '''
+            }
+        }
+        stage ('maintenance_up') {
+            steps {
+                sh 'sudo service nginx start'
+            }
+        }
+        stage ('git_clone') {
+            steps {
+                git branch: 'main',
+                    url: 'https://github.com/welel/noted.git'
+            }
+        }
+        stage ('docker_build') {
+            steps {
+                sh 'docker-compose -f ${compose_path}/docker-compose.prod.yaml build'
+            }
+        }
+        stage ('maintenance_down') {
+            steps {
+                sh 'sudo service nginx stop'
+            }
+        }
+        stage ('docker_start') {
+            steps {
+                sh 'docker-compose -f ${compose_path}/docker-compose.prod.yaml up -d'
+            }
+        }
+        stage ('postgres_avatars_restore') {
+            steps {
+                sh '''
+                    sleep 5
+                    sudo ${ops_scripts}/PostgreSQL_restore.sh
+                '''
+                //    sudo ${ops_scripts}/avatars_restore.sh 
+                 
+            }
+        }
+        stage ('logs') {
+            steps {
+                sh ''' 
+                sleep 60
+                docker logs noted-db
+                docker logs noted-nginx
+                docker logs noted-django 
+                '''
+            }
+        }
+        stage ('test_http_response') {
+            steps {
+                // Check http response from welel-noted.site. If 302 - success. Another - error. 302 means redirect to django-backend.
+                // If 302 it means that docker container with noted-django working with code 0.
+                sh ''' 
+                    if [ ! 'curl -i https://welel-noted.site/ | grep "HTTP/1.1 302 Found"']; then 
+                        echo "Stage failure"; exit 1;
+                    else
+                        echo "Stage stable";
+                '''
+            }
+        }
+    }
+    post {
+        failure {
+            withCredentials([string(credentialsId: 'chatToken', variable: 'TOKEN'), string(credentialsId: 'chatID', variable: 'CHAT_ID')]) {
+            sh ''' 
+                docker stop noted-nginx 
+                service nginx start  
+                curl -s -X POST https://api.telegram.org/bot${TOKEN}/sendMessage -d chat_id=${CHAT_ID} -d parse_mode=markdown -d text='NoteD production : *Pipeline results* : ERROR'
+            '''
+            }
+            
+        }
+        success {
+            withCredentials([string(credentialsId: 'chatToken', variable: 'TOKEN'), string(credentialsId: 'chatID', variable: 'CHAT_ID')]) {
+            sh ''' 
+                curl -s -X POST https://api.telegram.org/bot${TOKEN}/sendMessage -d chat_id=${CHAT_ID} -d parse_mode=markdown -d text='NoteD production : *Pipeline results* : Success'
+            '''
+            }
+        }
+    }
+}
